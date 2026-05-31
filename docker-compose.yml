@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    container_name: telestore_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      mongo:
+        condition: service_healthy
+    networks:
+      - telestore_net
+    volumes:
+      - ./logs:/app/logs
+
+  mongo:
+    image: mongo:7.0
+    container_name: telestore_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: telestore
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: telestore
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/init.js:ro
+    ports:
+      - "27017:27017"
+    networks:
+      - telestore_net
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/telestore --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Optional: MongoDB web UI
+  mongo_express:
+    image: mongo-express:1.0.2
+    container_name: telestore_mongoexpress
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: telestore
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-changeme}
+      ME_CONFIG_MONGODB_URL: mongodb://telestore:${MONGO_PASSWORD:-changeme}@mongo:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: ${ME_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${ME_PASSWORD:-secret}
+    depends_on:
+      - mongo
+    networks:
+      - telestore_net
+    profiles:
+      - debug
+
+networks:
+  telestore_net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local
